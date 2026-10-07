@@ -251,6 +251,89 @@
     @media (max-width: 640px) {
       .tip { font-size: 9.5px; letter-spacing: 0.16em; padding: 10px 14px 10px 12px; }
     }
+    /* ---------- loader ---------- */
+
+    .hero:not(.is-ready) .rise { animation-play-state: paused; }
+
+    .loader {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      color: var(--ink);
+      font-family: var(--text);
+      transition: opacity 0.4s ease;
+    }
+    .loader.is-quick { opacity: 0; }
+    /* the backdrop is cut into slats that part up and down, like the column pattern */
+    .loader-slats { position: absolute; inset: 0; display: flex; }
+    .loader-slats > i {
+      flex: 1 0 0;
+      margin-right: -1px;
+      background: #121211;
+      transition: transform 1.05s cubic-bezier(0.76, 0, 0.24, 1) var(--d, 0s);
+    }
+    .loader.is-leaving .loader-slats > i { transform: translateY(-101%); }
+    .loader.is-leaving .loader-slats > i:nth-child(even) { transform: translateY(101%); }
+
+    .loader-ui {
+      position: absolute;
+      inset: 0;
+      padding: var(--pad);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      animation: loader-in 0.9s ease 0.25s both; /* stays invisible if everything is already cached */
+      transition: opacity 0.45s ease, filter 0.45s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    @keyframes loader-in { from { opacity: 0; } }
+    .loader.is-leaving .loader-ui { opacity: 0; filter: blur(6px); transform: translateY(-12px); }
+
+    .loader-top, .loader-label {
+      font: 500 10.5px/1 var(--text);
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(246, 244, 238, 0.55);
+    }
+    .loader-top { display: flex; justify-content: space-between; }
+
+    .loader-cols {
+      place-self: center;
+      display: flex;
+      align-items: center;
+      gap: clamp(10px, 1.2vw, 16px);
+    }
+    .loader-col {
+      position: relative;
+      width: clamp(14px, 1.3vw, 20px);
+      height: clamp(100px, 17vh, 170px);
+      background: rgba(246, 244, 238, 0.09);
+      clip-path: polygon(0 0, 100% 0, 100% 6%, 86% 10%, 86% 90%, 100% 94%, 100% 100%, 0 100%, 0 94%, 14% 90%, 14% 10%, 0 6%);
+    }
+    .loader-col:nth-child(even) { transform: translateY(30%); }
+    .loader-col::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: var(--ink);
+      transform-origin: bottom;
+      transform: scaleY(var(--f, 0));
+    }
+
+    .loader-bottom { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
+    .loader-label { padding-bottom: 0.6em; }
+    .loader-num {
+      font-family: var(--display);
+      font-size: clamp(64px, 9vw, 150px);
+      line-height: 0.8;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.01em;
+    }
+    .loader-num sup { font-size: 0.28em; vertical-align: top; margin-left: 0.15em; color: rgba(246, 244, 238, 0.55); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .loader-slats > i { transition: none; }
+      .loader.is-leaving { opacity: 0; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .tip-mark { transition: none; }
       .rise { animation: none; opacity: 1; transform: none; }
@@ -259,6 +342,18 @@
   </style>
 </head>
 <body>
+  <div class="loader" id="loader" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div class="loader-slats" aria-hidden="true"></div>
+    <div class="loader-ui">
+      <div class="loader-top"><span>Mono design</span><span>Renovation studio</span></div>
+      <div class="loader-cols" aria-hidden="true"></div>
+      <div class="loader-bottom">
+        <span class="loader-label">Preparing the space</span>
+        <span class="loader-num"><span id="loader-num">000</span><sup>%</sup></span>
+      </div>
+    </div>
+  </div>
+  <noscript><style>.loader { display: none; } .hero .rise { animation-play-state: running; }</style></noscript>
   <section class="hero" id="hero" aria-label="Renovation before and after">
     <img class="layer before" src="before.webp" alt="Unfinished room with bare block walls" draggable="false" />
     <div class="after-wrap" id="after">
@@ -337,6 +432,7 @@
       const CREAM_IN = 140, CREAM_OUT = 500 // cream flash fades between these, relative to bar start
       const CREAM = '#f3f2ec'
       const CREAM_PEAK = 0.72 // how strong the cream flash is at its brightest
+      const TYPE_LAG = 240 // type changes this long after the columns at its spot start growing
 
       let target = { x: 0, y: 0 }
       let pos = { x: 0, y: 0 }
@@ -472,6 +568,15 @@
         const bars = makeBars(p, W, H)
         const end = Math.max(...bars.map((b) => b.delay)) + Math.max(GROW, CREAM_OUT)
         build = { start: performance.now(), end, bars, W, H, dpr, mask, ctx: canvas.getContext('2d'), mctx: mask.getContext('2d') }
+        // time every letter, line and button to the moment the column wave reaches it,
+        // so the type changes in step with the pattern instead of on its own schedule
+        const r0 = hero.getBoundingClientRect()
+        const far = Math.hypot(Math.max(p.x, W - p.x), Math.max(p.y, H - p.y))
+        for (const el of hero.querySelectorAll('.swap, .pop, .reveal')) {
+          const r = el.getBoundingClientRect()
+          const d = Math.hypot(r.left + r.width / 2 - r0.left - p.x, r.top + r.height / 2 - r0.top - p.y) / far
+          el.style.setProperty('--d', ((d * SPREAD + TYPE_LAG) / 1000).toFixed(3) + 's')
+        }
         canvas.classList.add('is-active')
         hero.classList.add('is-done', 'is-built')
         if (reduceMotion) build.start -= end
@@ -643,6 +748,87 @@
       hero.addEventListener('pointercancel', () => { touchStart = null })
 
       if (matchMedia('(hover: none)').matches) tipAction.textContent = 'Tap anywhere'
+    })()
+  </script>
+  <script>
+    // Loader: real milestones (both photos decoded + fonts) drive the columns and the counter,
+    // with a slow creep in between so it never looks stuck. Cached visits skip it entirely.
+    (() => {
+      const loader = document.getElementById('loader')
+      const hero = document.getElementById('hero')
+      const num = document.getElementById('loader-num')
+      const slatBox = loader.querySelector('.loader-slats')
+      const colBox = loader.querySelector('.loader-cols')
+      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      const SLATS = 12, COLS = 9
+      const QUICK_MS = 300 // finished faster than this: no loader show at all
+      const MIN_SHOW = 900 // once the loader is visible, keep it long enough to read
+      const FONT_WAIT = 3000, MAX_WAIT = 10000 // give up waiting after this and show what we have
+
+      for (let i = 0; i < SLATS; i++) {
+        const s = document.createElement('i')
+        // part from the middle outwards
+        s.style.setProperty('--d', (Math.abs(i - (SLATS - 1) / 2) * 0.045 + 0.2).toFixed(3) + 's')
+        slatBox.appendChild(s)
+      }
+      const cols = Array.from({ length: COLS }, () => {
+        const c = document.createElement('span')
+        c.className = 'loader-col'
+        return colBox.appendChild(c)
+      })
+
+      const t0 = performance.now()
+      let loaded = 0
+      const track = (p, weight) => p.then(() => { loaded += weight }, () => { loaded += weight })
+      const ready = (img) => (img.complete && img.naturalWidth ? Promise.resolve() : new Promise((res, rej) => {
+        img.addEventListener('load', res, { once: true })
+        img.addEventListener('error', rej, { once: true })
+      })).then(() => img.decode && img.decode().catch(() => {}))
+      // never let a slow font CDN or a stuck decode hold the page hostage
+      const within = (p, ms) => Promise.race([p, new Promise((res) => setTimeout(res, ms))])
+      const [before, after] = hero.querySelectorAll('img')
+      const jobs = [
+        track(within(ready(before), MAX_WAIT), 0.62),
+        track(within(ready(after), MAX_WAIT), 0.26),
+        track(within(document.fonts ? document.fonts.ready : Promise.resolve(), FONT_WAIT), 0.12),
+      ]
+
+      let shown = 0 // display progress 0..1
+      let allDone = false
+      let doneAt = 0
+      Promise.all(jobs).then(() => { allDone = true; doneAt = performance.now() })
+
+      const leave = () => {
+        loader.classList.add('is-leaving')
+        // let "Renovation?" rise while the slats are still parting
+        setTimeout(() => hero.classList.add('is-ready'), reduceMotion ? 0 : 650)
+        setTimeout(() => loader.remove(), reduceMotion ? 450 : 1900)
+      }
+
+      const step = (now) => {
+        const t = now - t0
+        if (allDone && doneAt - t0 < QUICK_MS) {
+          hero.classList.add('is-ready')
+          loader.classList.add('is-quick')
+          setTimeout(() => loader.remove(), 450)
+          return
+        }
+        // creep towards the next milestone, never reaching it until it actually lands
+        const creep = 1 - Math.exp(-t / 2600)
+        const goal = allDone ? 1 : loaded + (1 - loaded) * 0.8 * creep
+        shown += (goal - shown) * (allDone ? 0.12 : 0.06)
+        if (allDone && 1 - shown < 0.004) shown = 1
+
+        const pct = Math.round(shown * 100)
+        num.textContent = String(pct).padStart(3, '0')
+        loader.setAttribute('aria-valuenow', pct)
+        cols.forEach((c, i) => c.style.setProperty('--f', Math.max(0, Math.min(1, shown * COLS - i)).toFixed(3)))
+
+        if (shown === 1 && t >= MIN_SHOW) return leave()
+        requestAnimationFrame(step)
+      }
+      requestAnimationFrame(step)
     })()
   </script>
 </body>
