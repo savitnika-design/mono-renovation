@@ -287,7 +287,7 @@
     @keyframes loader-in { from { opacity: 0; } }
     .loader.is-leaving .loader-ui { opacity: 0; filter: blur(6px); transform: translateY(-12px); }
 
-    .loader-top, .loader-label {
+    .loader-top, .loader-num {
       font: 500 10.5px/1 var(--text);
       letter-spacing: 0.22em;
       text-transform: uppercase;
@@ -318,16 +318,10 @@
       transform: scaleY(var(--f, 0));
     }
 
-    .loader-bottom { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
-    .loader-label { padding-bottom: 0.6em; }
-    .loader-num {
-      font-family: var(--display);
-      font-size: clamp(64px, 9vw, 150px);
-      line-height: 0.8;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: 0.01em;
-    }
-    .loader-num sup { font-size: 0.28em; vertical-align: top; margin-left: 0.15em; color: rgba(246, 244, 238, 0.55); }
+    .loader-bottom { display: flex; justify-content: flex-end; }
+    /* a quiet counter in the same voice as the corner captions */
+    .loader-num { font-variant-numeric: tabular-nums; }
+    .loader-num #loader-num { color: var(--ink); }
 
     @media (prefers-reduced-motion: reduce) {
       .loader-slats > i { transition: none; }
@@ -348,8 +342,7 @@
       <div class="loader-top"><span>Mono design</span><span>Renovation studio</span></div>
       <div class="loader-cols" aria-hidden="true"></div>
       <div class="loader-bottom">
-        <span class="loader-label">Preparing the space</span>
-        <span class="loader-num"><span id="loader-num">000</span><sup>%</sup></span>
+        <span class="loader-num"><span id="loader-num">000</span> %</span>
       </div>
     </div>
   </div>
