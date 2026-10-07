@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Renovation. Managed.</title>
+  <link rel="preload" as="image" href="before.webp" />
+  <link rel="preload" as="image" href="after.webp" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Forum&family=Onest:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #f6f4ee;
+      --ink-soft: rgba(246, 244, 238, 0.8);
+      --stone: #d8d6cb;
+      --black: #3a3a3a;
+      --olive: #525c2f;
+      --tip-bg: rgba(255, 255, 255, 0.82);
+      --tip-fg: #2b2723;
+      --tip-border: rgba(255, 255, 255, 0.9);
+      --pad: clamp(20px, 3.2vw, 56px);
+      --display: "Forum", "Times New Roman", serif;
+      --text: "Onest", system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0f0f0f; }
+
+    .hero {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      height: 100svh;
+      min-height: 560px;
+      overflow: hidden;
+      cursor: crosshair;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      font-family: var(--text);
+      color: var(--ink);
+    }
+    .hero.is-done { cursor: default; touch-action: auto; }
+
+    .layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+      -webkit-user-drag: none;
+    }
+    .layer.before { filter: brightness(0.62) saturate(0.9); }
+
+    /* "after" sits on top; JS paints its mask: a soft oval at the cursor plus a fading trail.
+       Fully hidden until the cursor arrives. */
+    .after-wrap {
+      position: absolute;
+      inset: 0;
+      -webkit-mask-image: linear-gradient(transparent, transparent);
+      mask-image: linear-gradient(transparent, transparent);
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+    }
+
+    /* the "render loading" build: the after image assembled from baluster-like bars */
+    .build {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      display: none;
+    }
+    .build.is-active { display: block; }
+
+    /* keeps the type readable on both the dark "before" and the light "after" */
+    .scrim {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(15, 15, 15, 0.5) 0%, rgba(15, 15, 15, 0) 34%),
+        linear-gradient(0deg, rgba(15, 15, 15, 0.55) 0%, rgba(15, 15, 15, 0) 38%);
+    }
+
+    /* ---------- type ---------- */
+
+    .content {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      padding: var(--pad);
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      grid-template-rows: auto auto 1fr auto;
+      column-gap: clamp(12px, 1.6vw, 24px);
+      pointer-events: none;
+    }
+    .title { display: contents; }
+    .title-line {
+      font-family: var(--display);
+      font-weight: 400;
+      font-size: clamp(56px, 9.2vw, 172px);
+      line-height: 0.86;
+      letter-spacing: 0.005em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .title-line.top { grid-column: 1 / span 8; grid-row: 1; align-self: start; }
+    .title-line.bottom { grid-column: 5 / -1; grid-row: 4; justify-self: end; align-self: end; margin-bottom: -0.08em; }
+    /* the headline is re-set when the render is ordered: each letter drops out blurred while a
+       fresh copy settles in from above, so "Renovation?" ends as "Renovation." and "Managed."
+       arrives with the same motion */
+    .swap { display: inline-grid; }
+    .swap > span, .pop {
+      display: inline-block;
+      grid-area: 1 / 1;
+      transition:
+        opacity 0.55s ease var(--d, 0s),
+        transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0s),
+        filter 0.55s ease var(--d, 0s);
+    }
+    .swap .in, .pop { opacity: 0; transform: translateY(-0.2em); filter: blur(6px); }
+    .is-built .swap .out { opacity: 0; transform: translateY(0.2em) scale(0.85); filter: blur(6px); }
+    .is-built .swap .in, .is-built .pop { opacity: 1; transform: none; filter: none; }
+
+    .lede {
+      grid-column: 1 / span 5;
+      grid-row: 2;
+      margin: clamp(18px, 2vw, 34px) 0 0;
+      font-size: clamp(15px, 1.2vw, 19px);
+      line-height: 1.5;
+      color: var(--ink-soft);
+    }
+    .lede > span { display: block; }
+
+    .actions {
+      grid-column: 1 / span 4;
+      grid-row: 4;
+      align-self: end;
+      width: max-content;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: auto;
+      visibility: hidden;
+    }
+    .is-built .actions { visibility: visible; }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 28px;
+      padding: 19px 24px 18px 26px;
+      font: 500 12px/1 var(--text);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .btn-arrow { width: 18px; height: 10px; transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+    .btn:hover .btn-arrow, .btn:focus-visible .btn-arrow { transform: translateX(4px); }
+    .btn:focus-visible { outline: 1px solid var(--ink); outline-offset: 4px; }
+    .btn-primary { background: var(--ink); color: var(--black); }
+    .btn-primary:hover { background: var(--olive); color: var(--ink); }
+    /* same box as the primary, just without a fill, so both labels and arrows line up */
+    .btn-ghost { background: transparent; color: var(--ink); }
+    .btn-ghost:hover { background: rgba(246, 244, 238, 0.08); box-shadow: inset 0 0 0 1px rgba(246, 244, 238, 0.28); }
+
+    /* load: only the question is on screen */
+    .rise { opacity: 0; transform: translateY(18px); animation: rise 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.15s forwards; }
+    @keyframes rise { to { opacity: 1; transform: none; } }
+
+    /* click: everything else surfaces together with the render, staggered by --d */
+    .reveal {
+      opacity: 0;
+      transform: translateY(var(--lift, 0.35em));
+      filter: blur(8px);
+      transition:
+        opacity 0.9s ease var(--d, 0s),
+        transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0s),
+        filter 0.9s ease var(--d, 0s);
+    }
+    .is-built .reveal { opacity: 1; transform: none; filter: none; }
+
+    @media (max-width: 760px) {
+      .content {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto 1fr auto;
+        padding-top: calc(var(--pad) + 8px);
+      }
+      .title-line { font-size: clamp(44px, 15.5vw, 96px); }
+      .title-line.top { grid-column: 1; grid-row: 1; }
+      .title-line.bottom { grid-column: 1; grid-row: 2; justify-self: end; margin: 0.06em 0 0; }
+      .lede { grid-column: 1; grid-row: 3; margin-top: 28px; max-width: 280px; }
+      .actions { grid-column: 1; grid-row: 5; width: auto; }
+    }
+
+    /* ---------- hint ---------- */
+
+    .tip {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 3;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px 12px 14px;
+      background: rgba(18, 18, 16, 0.5);
+      color: var(--ink);
+      border: 1px solid rgba(246, 244, 238, 0.16);
+      box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      -webkit-backdrop-filter: blur(16px) saturate(1.1);
+      backdrop-filter: blur(16px) saturate(1.1);
+      font: 500 10.5px/1 var(--text);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      will-change: transform, opacity;
+      transition: opacity 0.6s ease;
+    }
+    .tip.is-visible { opacity: 1; }
+    .tip.is-visible.is-muted, .tip.is-visible.is-moving { opacity: 0; transition-duration: 0.25s; }
+    .tip-inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      transform: translateY(5px);
+      transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .tip.is-visible .tip-inner { transform: none; }
+    /* the brand column, drawn in from the top when the hint appears */
+    .tip-mark {
+      width: 6px;
+      height: 18px;
+      color: var(--stone);
+      clip-path: inset(0 0 100% 0);
+      transition: clip-path 0.7s cubic-bezier(0.6, 0, 0.2, 1) 0.15s;
+    }
+    .tip.is-visible .tip-mark { clip-path: inset(0); }
+    .tip-rule { width: 1px; height: 14px; background: rgba(246, 244, 238, 0.22); }
+    .tip-soft { color: rgba(246, 244, 238, 0.62); }
+
+    @media (max-width: 640px) {
+      .tip { font-size: 9.5px; letter-spacing: 0.16em; padding: 10px 14px 10px 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tip-mark { transition: none; }
+      .rise { animation: none; opacity: 1; transform: none; }
+      .reveal, .swap > span, .pop { transition: none; filter: none; }
+    }
+  </style>
+</head>
+<body>
+  <section class="hero" id="hero" aria-label="Renovation before and after">
+    <img class="layer before" src="before.webp" alt="Unfinished room with bare block walls" draggable="false" />
+    <div class="after-wrap" id="after">
+      <img class="layer" src="after.webp" alt="The same room after renovation" draggable="false" />
+    </div>
+    <canvas class="build" id="build" aria-hidden="true"></canvas>
+    <div class="scrim" aria-hidden="true"></div>
+
+    <div class="content">
+      <h1 class="title">
+        <span class="title-line top rise" data-swap="Renovation|?|." data-delay="0.1">Renovation?</span>
+        <span class="title-line bottom split" data-delay="0.5">Managed.</span>
+      </h1>
+      <p class="lede">
+        <span class="reveal" style="--d: 0.95s">Apartments and villas.</span>
+        <span class="reveal" style="--d: 1.07s">Complex transformations.</span>
+        <span class="reveal" style="--d: 1.19s">Fully managed.</span>
+      </p>
+      <div class="actions">
+        <div class="reveal" style="--d: 1.4s; --lift: 14px">
+          <a class="btn btn-primary" href="#consultation">Schedule a Consultation <svg class="btn-arrow" viewBox="0 0 18 10" aria-hidden="true"><path d="M0 5h16M12 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.2" /></svg></a>
+        </div>
+        <div class="reveal" style="--d: 1.52s; --lift: 14px">
+          <a class="btn btn-ghost" href="#projects">View Projects <svg class="btn-arrow" viewBox="0 0 18 10" aria-hidden="true"><path d="M0 5h16M12 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.2" /></svg></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip" id="tip" role="status">
+      <span class="tip-inner">
+        <svg class="tip-mark" viewBox="0 0 9 34" aria-hidden="true"><path fill="currentColor" d="M0 0h9v3l-1.2 2.2v23.6L9 31v3H0v-3l1.2-2.2V5.2L0 3z" /></svg>
+        <span class="tip-rule" aria-hidden="true"></span>
+        <span><span id="tip-action">Click anywhere</span> <span class="tip-soft">to finish renovation</span></span>
+      </span>
+    </div>
+  </section>
+
+  <script>
+    (() => {
+      const hero = document.getElementById('hero')
+      const after = document.getElementById('after')
+      const afterImg = after.querySelector('img')
+      const canvas = document.getElementById('build')
+      const tip = document.getElementById('tip')
+      const tipAction = document.getElementById('tip-action')
+
+      // headline letters, each with its own delay so the change runs through the word as a wave
+      const at = (base, i, step) => (base + i * step).toFixed(2) + 's'
+      for (const el of document.querySelectorAll('[data-swap]')) {
+        // "word|from|to": every letter swaps for itself, the trailing mark swaps from -> to
+        const [word, from, to] = el.dataset.swap.split('|')
+        const base = parseFloat(el.dataset.delay || '0')
+        const pairs = [...word].map((c) => [c, c]).concat([[from, to]])
+        el.setAttribute('aria-label', word)
+        el.innerHTML = pairs.map(([o, n], i) =>
+          '<span class="swap" aria-hidden="true" style="--d:' + at(base, i, 0.05) + '"><span class="out">' + o + '</span><span class="in">' + n + '</span></span>').join('')
+      }
+      for (const el of document.querySelectorAll('.split')) {
+        const base = parseFloat(el.dataset.delay || '0')
+        el.setAttribute('aria-label', el.textContent)
+        el.innerHTML = [...el.textContent].map((c, i) =>
+          '<span class="pop" aria-hidden="true" style="--d:' + at(base, i, 0.06) + '">' + c + '</span>').join('')
+      }
+
+      const TIP_DELAY = 2000 // ms after the cursor arrives before the hint shows up
+      const TIP_REST = 600 // the hint steps aside while the cursor moves and returns once it rests this long
+      const TRAIL_MS = 500 // how long the revealed trail lingers behind the cursor
+      const TRAIL_MAX = 24
+      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      // build timing (ms)
+      const SPREAD = 900 // wave travel time from the click to the farthest bar
+      const JITTER = 220
+      const PHASE2 = 480 // the in-between bars start this much later
+      const GROW = 340
+      const CREAM_IN = 140, CREAM_OUT = 500 // cream flash fades between these, relative to bar start
+      const CREAM = '#f3f2ec'
+      const CREAM_PEAK = 0.72 // how strong the cream flash is at its brightest
+
+      let target = { x: 0, y: 0 }
+      let pos = { x: 0, y: 0 }
+      let tipPos = { x: 0, y: 0 }
+      let scale = 0 // current lens size 0..1
+      let scaleTarget = 0
+      let trail = [] // { x, y, s, t } points left behind the lens
+      let inside = false
+      let done = false
+      let build = null // { start, end, bars, ... } while the render is assembling
+      let tipTimer = 0
+      let restTimer = 0
+      let lastMove = null
+      let raf = 0
+      let rx = 120, ry = 155
+
+      const sizeLens = () => {
+        rx = Math.max(90, Math.min(170, hero.clientWidth * 0.09))
+        ry = rx * 1.3
+      }
+      sizeLens()
+      addEventListener('resize', sizeLens)
+
+      const local = (e) => {
+        const r = hero.getBoundingClientRect()
+        return { x: e.clientX - r.left, y: e.clientY - r.top }
+      }
+      const onLink = (e) => !!(e.target.closest && e.target.closest('a, button'))
+
+      // the timer starts once when the cursor arrives; moving around doesn't restart it
+      const showTipLater = () => {
+        if (tipTimer || tip.classList.contains('is-visible')) return
+        tipTimer = setTimeout(() => {
+          tipTimer = 0
+          if (inside && !done && !build) tip.classList.add('is-visible')
+        }, TIP_DELAY)
+      }
+      const hideTip = () => { clearTimeout(tipTimer); tipTimer = 0; tip.classList.remove('is-visible') }
+
+      /* ---------- lens + trail mask ---------- */
+
+      const a = (v) => `rgba(0,0,0,${v.toFixed(3)})`
+      // solid core around the point
+      const core = (x, y, s, k) =>
+        `radial-gradient(${(rx * s).toFixed(1)}px ${(ry * s).toFixed(1)}px at ${x.toFixed(1)}px ${y.toFixed(1)}px,` +
+        `${a(k)} 0%,${a(k)} 42%,${a(0.75 * k)} 62%,${a(0.3 * k)} 82%,transparent 100%)`
+      // fainter, taller halo shifted upward, so the reveal feathers further up and a little to the sides
+      const halo = (x, y, s, k) =>
+        `radial-gradient(${(rx * s * 1.35).toFixed(1)}px ${(ry * s * 1.55).toFixed(1)}px at ${x.toFixed(1)}px ${(y - ry * s * 0.6).toFixed(1)}px,` +
+        `${a(0.55 * k)} 0%,${a(0.28 * k)} 45%,${a(0.08 * k)} 75%,transparent 100%)`
+
+      const paintMask = (now) => {
+        const layers = []
+        if (scale > 0.01) layers.push(core(pos.x, pos.y, scale, 1), halo(pos.x, pos.y, scale, 1))
+        for (const p of trail) {
+          const k = 1 - (now - p.t) / TRAIL_MS
+          if (k <= 0) continue
+          // older points shrink a little and fade out with an ease, so the tail tapers
+          layers.push(core(p.x, p.y, p.s * (0.72 + 0.28 * k), k * k * 0.9))
+        }
+        const m = layers.length ? layers.join(',') : 'linear-gradient(transparent, transparent)'
+        after.style.webkitMaskImage = m
+        after.style.maskImage = m
+      }
+
+      const dropTrail = (now) => {
+        const last = trail[trail.length - 1]
+        const moved = last ? Math.hypot(pos.x - last.x, pos.y - last.y) : Infinity
+        if (scale > 0.05 && moved > Math.max(10, rx * 0.12)) {
+          trail.push({ x: pos.x, y: pos.y, s: scale, t: now })
+          if (trail.length > TRAIL_MAX) trail.shift()
+        }
+        trail = trail.filter((p) => now - p.t < TRAIL_MS)
+      }
+
+      /* ---------- bar pattern build ---------- */
+
+      const ease = (t) => 1 - Math.pow(1 - t, 3)
+      const clamp01 = (t) => Math.max(0, Math.min(1, t))
+
+      // a column with flared ends: full width at the caps, a slightly slimmer shaft between
+      const barPath = (c, b) => {
+        const { x, y, w, h, inset: i } = b
+        const cap = Math.min(14, h * 0.05), t = Math.min(7, h * 0.03)
+        c.beginPath()
+        c.moveTo(x, y); c.lineTo(x + w, y)
+        c.lineTo(x + w, y + cap); c.lineTo(x + w - i, y + cap + t)
+        c.lineTo(x + w - i, y + h - cap - t); c.lineTo(x + w, y + h - cap)
+        c.lineTo(x + w, y + h); c.lineTo(x, y + h)
+        c.lineTo(x, y + h - cap); c.lineTo(x + i, y + h - cap - t)
+        c.lineTo(x + i, y + cap + t); c.lineTo(x, y + cap)
+        c.closePath()
+      }
+
+      const makeBars = (o, W, H) => {
+        const pitch = Math.max(44, Math.min(72, W / 19))
+        const barW = Math.round(pitch * 0.49)
+        const inset = Math.max(2, Math.round(pitch * 0.045))
+        const ov = inset * 2 + 1 // in-between bars overlap far enough to close every notch
+        const rows = Math.max(2, Math.round(H / (pitch * 4)))
+        const rowH = H / (rows - 0.2)
+        const top0 = -rowH * 0.2 // a partial row at the top, like the reference
+        const far = Math.hypot(Math.max(o.x, W - o.x), Math.max(o.y, H - o.y))
+        const bars = []
+        for (let r = 0; top0 + r * rowH < H; r++) {
+          const y = top0 + r * rowH
+          const shift = (r % 2) * pitch / 2
+          const fromTop = y + rowH / 2 >= o.y // rows below the click grow down, rows above grow up
+          for (let x = -pitch + shift; x < W + pitch; x += pitch) {
+            const d = Math.hypot(x + barW / 2 - o.x, y + rowH / 2 - o.y) / far
+            // a few stragglers keep the "still rendering" gaps from the pattern alive a bit longer
+            const late = Math.random() < 0.14 ? 180 + Math.random() * 260 : 0
+            bars.push({ x, y, w: barW, h: rowH, inset, fromTop, delay: d * SPREAD + Math.random() * JITTER + late })
+            const d2 = Math.hypot(x + pitch * 0.75 - o.x, y + rowH / 2 - o.y) / far
+            bars.push({
+              x: x + barW - ov, y, w: pitch - barW + ov * 2, h: rowH, inset, fromTop,
+              delay: PHASE2 + d2 * SPREAD + Math.random() * JITTER,
+            })
+          }
+        }
+        return bars
+      }
+
+      const startBuild = (p) => {
+        hideTip()
+        const dpr = Math.min(2, devicePixelRatio || 1)
+        const W = hero.clientWidth, H = hero.clientHeight
+        canvas.width = Math.round(W * dpr)
+        canvas.height = Math.round(H * dpr)
+        const mask = document.createElement('canvas')
+        mask.width = canvas.width
+        mask.height = canvas.height
+        const bars = makeBars(p, W, H)
+        const end = Math.max(...bars.map((b) => b.delay)) + Math.max(GROW, CREAM_OUT)
+        build = { start: performance.now(), end, bars, W, H, dpr, mask, ctx: canvas.getContext('2d'), mctx: mask.getContext('2d') }
+        canvas.classList.add('is-active')
+        hero.classList.add('is-done', 'is-built')
+        if (reduceMotion) build.start -= end
+        kick()
+      }
+
+      // draw only the grown part of a bar: clip it to a rect that extends from its anchor end
+      const fillGrown = (c, b, g) => {
+        const vh = b.h * ease(g)
+        c.save()
+        c.beginPath()
+        c.rect(b.x - 2, b.fromTop ? b.y : b.y + b.h - vh, b.w + 4, vh)
+        c.clip()
+        barPath(c, b)
+        c.fill()
+        c.restore()
+      }
+
+      const drawBuild = (now) => {
+        const B = build
+        const t = now - B.start
+        const { ctx, mctx, dpr, W, H } = B
+
+        mctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        mctx.clearRect(0, 0, W, H)
+        mctx.fillStyle = '#fff'
+        for (const b of B.bars) {
+          const g = clamp01((t - b.delay) / GROW)
+          if (g > 0) fillGrown(mctx, b, g)
+        }
+
+        // the after image (object-fit: cover), cut down to the grown bars
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.clearRect(0, 0, W, H)
+        const iw = afterImg.naturalWidth, ih = afterImg.naturalHeight
+        const s = Math.max(W / iw, H / ih)
+        ctx.drawImage(afterImg, (W - iw * s) / 2, (H - ih * s) / 2, iw * s, ih * s)
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.globalCompositeOperation = 'destination-in'
+        ctx.drawImage(B.mask, 0, 0)
+        ctx.globalCompositeOperation = 'source-over'
+
+        // each fresh bar flashes the pattern's cream before the render shows through
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.fillStyle = CREAM
+        for (const b of B.bars) {
+          const bt = t - b.delay
+          if (bt <= 0 || bt >= CREAM_OUT) continue
+          ctx.globalAlpha = CREAM_PEAK * (bt < CREAM_IN ? 1 : 1 - (bt - CREAM_IN) / (CREAM_OUT - CREAM_IN))
+          fillGrown(ctx, b, clamp01(bt / GROW))
+        }
+        ctx.globalAlpha = 1
+
+        if (t >= B.end) {
+          build = null
+          done = true
+          after.style.webkitMaskImage = 'none'
+          after.style.maskImage = 'none'
+          canvas.classList.remove('is-active')
+        }
+      }
+
+      /* ---------- loop ---------- */
+
+      const tick = (now) => {
+        raf = 0
+        if (build) {
+          drawBuild(now)
+          if (build) raf = requestAnimationFrame(tick)
+          return
+        }
+        if (done) return
+
+        const k = reduceMotion ? 1 : 0.2
+        pos.x += (target.x - pos.x) * k
+        pos.y += (target.y - pos.y) * k
+        tipPos.x += (target.x - tipPos.x) * 0.14
+        tipPos.y += (target.y - tipPos.y) * 0.14
+        scale += (scaleTarget - scale) * (reduceMotion ? 1 : 0.12)
+        if (reduceMotion) trail = []
+        else dropTrail(now)
+        paintMask(now)
+
+        // keep the hint beside the cursor, flipping to the other side near the edges
+        const tw = tip.offsetWidth, th = tip.offsetHeight
+        const W = hero.clientWidth, H = hero.clientHeight
+        let tx = tipPos.x + 22, ty = tipPos.y + 26
+        if (tx + tw > W - 12) tx = tipPos.x - tw - 22
+        if (ty + th > H - 12) ty = tipPos.y - th - 26
+        tip.style.transform = `translate3d(${tx}px, ${ty}px, 0)`
+
+        const settling = trail.length > 0 ||
+          Math.abs(target.x - pos.x) > 0.3 || Math.abs(target.y - pos.y) > 0.3 ||
+          Math.abs(scaleTarget - scale) > 0.002 || Math.abs(target.x - tipPos.x) > 0.3 || Math.abs(target.y - tipPos.y) > 0.3
+        if (settling) raf = requestAnimationFrame(tick)
+      }
+      const kick = () => { if (!raf) raf = requestAnimationFrame(tick) }
+
+      const enter = (e) => {
+        if (done || build) return
+        const p = local(e)
+        if (!inside) {
+          // start the lens right under the cursor instead of sliding in from the last spot
+          pos = { ...p }
+          tipPos = { ...p }
+        }
+        inside = true
+        target = p
+        scaleTarget = 1
+        // "click anywhere" would be misleading while hovering a button
+        tip.classList.toggle('is-muted', onLink(e))
+        if (lastMove && Math.hypot(p.x - lastMove.x, p.y - lastMove.y) > 2) {
+          tip.classList.add('is-moving')
+          clearTimeout(restTimer)
+          restTimer = setTimeout(() => tip.classList.remove('is-moving'), TIP_REST)
+        }
+        lastMove = p
+        showTipLater()
+        kick()
+      }
+
+      const leave = () => {
+        if (done || build) return
+        inside = false
+        scaleTarget = 0
+        hideTip()
+        kick()
+      }
+
+      const finish = (e) => {
+        if (done || build) return
+        const p = local(e)
+        const go = () => { if (!done && !build) startBuild(p) }
+        if (afterImg.complete && afterImg.naturalWidth) go()
+        else afterImg.decode().then(go, go)
+      }
+
+      // Mouse / pen: hover shows the lens, click finishes.
+      // Touch: drag to peek, a tap (without dragging) finishes.
+      let touchStart = null
+      hero.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') enter(e) })
+      hero.addEventListener('pointermove', (e) => {
+        if (e.pointerType === 'touch') {
+          if (touchStart && Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y) > 8) touchStart.moved = true
+          if (touchStart) enter(e)
+          return
+        }
+        enter(e)
+      })
+      hero.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') leave() })
+      hero.addEventListener('pointerdown', (e) => {
+        if (onLink(e)) return
+        if (e.pointerType === 'touch') {
+          touchStart = { x: e.clientX, y: e.clientY, moved: false, wasPeeking: inside }
+          enter(e)
+          return
+        }
+        if (e.button === 0) finish(e)
+      })
+      const touchEnd = (e) => {
+        if (e.pointerType !== 'touch' || !touchStart) return
+        const t = touchStart
+        touchStart = null
+        // the first tap only opens the lens; a tap while it is already open finishes
+        if (!t.moved && t.wasPeeking) finish(e)
+      }
+      hero.addEventListener('pointerup', touchEnd)
+      hero.addEventListener('pointercancel', () => { touchStart = null })
+
+      if (matchMedia('(hover: none)').matches) tipAction.textContent = 'Tap anywhere'
+    })()
+  </script>
+</body>
+</html>
